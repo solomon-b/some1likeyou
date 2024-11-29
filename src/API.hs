@@ -1,11 +1,19 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module API
   ( EventAPI,
@@ -29,29 +37,42 @@ type Song = String
 
 type Duration = Int
 
-data PayloadWakeUp = PayloadWakeUp
+data EventType = WakeUp | Eat | RockOut
+
+data family Payload (e :: EventType)
+
+data instance (Payload 'WakeUp) = PayloadWakeUp
   deriving stock (Show, Generic)
 
-newtype PayloadEat = PayloadEat { meal :: Meal }
+newtype instance (Payload 'Eat) = PayloadEat { meal :: Meal }
   deriving stock (Show, Generic)
 
-data PayloadRockOut = PayloadRockOut { song :: Song, duration :: Duration }
+data instance (Payload 'RockOut) = PayloadRockOut { song :: Song, duration :: Duration }
   deriving stock (Show, Generic)
 
-instance Aeson.FromJSON PayloadWakeUp
-instance Aeson.FromJSON PayloadEat
-instance Aeson.FromJSON PayloadRockOut
+instance Aeson.ToJSON (Payload 'WakeUp)
 
-data Event =
-   EventWakeUp PayloadWakeUp
- | EventEat PayloadEat
- | EventRockOut PayloadRockOut
-  deriving Show
+instance Aeson.FromJSON (Payload 'WakeUp)
+
+instance Aeson.ToJSON (Payload 'Eat)
+
+instance Aeson.FromJSON (Payload 'Eat)
+
+instance Aeson.ToJSON (Payload 'RockOut)
+
+instance Aeson.FromJSON (Payload 'RockOut)
+
+data Event where
+  MkEvent :: Aeson.ToJSON (Payload et) => Payload (et :: EventType) -> Event
+
+instance Aeson.ToJSON Event where
+  toJSON :: Event -> Aeson.Value
+  toJSON (MkEvent et) = Aeson.toJSON et
 
 --------------------------------------------------------------------------------
 
 type Req  = Servant.ReqBody '[Servant.JSON] Aeson.Value
-type Resp = Servant.Post '[Servant.JSON] String
+type Resp = Servant.Post '[Servant.JSON] Event
 
 type EventAPI =
   "api" :> "event" :>
@@ -60,20 +81,20 @@ type EventAPI =
           :<|> "rock-out" :> Req :> Resp
              )
 
-importEvent :: forall e. (Aeson.FromJSON e, Show e) => Proxy e -> Aeson.Value -> Servant.Handler String
-importEvent _ blob =
-  case Aeson.fromJSON @e blob of
+importEvent :: forall (et :: EventType) . (Aeson.FromJSON (Payload et), Aeson.ToJSON (Payload et)) => Aeson.Value -> Servant.Handler Event
+importEvent blob =
+  case Aeson.fromJSON blob of
     Aeson.Error err -> fail err
-    Aeson.Success res -> pure (show res)
+    Aeson.Success (res :: Payload et) -> pure (MkEvent res)
 
-wakeUp :: Aeson.Value -> Servant.Handler String
-wakeUp = importEvent (Proxy @PayloadWakeUp)
+wakeUp :: Aeson.Value -> Servant.Handler Event
+wakeUp = importEvent @WakeUp
 
-eat :: Aeson.Value -> Servant.Handler String
-eat = importEvent (Proxy @PayloadEat)
+eat :: Aeson.Value -> Servant.Handler Event
+eat = importEvent @Eat
 
-rockOut :: Aeson.Value -> Servant.Handler String
-rockOut = importEvent (Proxy @PayloadRockOut)
+rockOut :: Aeson.Value -> Servant.Handler Event
+rockOut = importEvent @RockOut
 
 eventServer :: Servant.Application
 eventServer = Servant.serve (Proxy @EventAPI) $ wakeUp :<|> eat :<|> rockOut
