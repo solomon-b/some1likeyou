@@ -1,0 +1,47 @@
+cabal-version: 3.6
+name:          some1likeyou
+version:       0.1.0.0
+author:        isovector
+maintainer:    ssbothwell@gmail.com
+category:      Web
+
+--------------------------------------------------------------------------------
+
+common options
+  ghc-options: -Wall
+
+--------------------------------------------------------------------------------
+
+library
+  import:           options
+  exposed-modules:
+    API
+
+  build-depends:
+    , aeson
+    , base                       >=2 && <5
+    , bytestring
+    , lens
+    , mtl
+    , servant
+    , servant-server
+    , text
+    , wai
+
+  hs-source-dirs:   src
+  default-language: Haskell2010
+
+--------------------------------------------------------------------------------
+
+executable some1likeyou
+  import:           options
+  main-is:          Main.hs
+  build-depends:
+    , base            >=2 && <5
+    , servant-server
+    , some1likeyou
+    , wai
+    , warp
+
+  hs-source-dirs:   app
+  default-language: Haskell2010
